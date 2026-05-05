@@ -1,0 +1,109 @@
+/* src/styles/sidebar.css */
+.sidebar {
+  width: 260px;
+  min-height: 100vh;
+  padding: 22px 18px;
+  color: #fff;
+
+  background: linear-gradient(180deg, #0b1220 0%, #111827 60%, #0b1220 100%);
+  border-right: 1px solid rgba(243, 128, 128, 0.06);
+
+  /* subtle glass effect */
+  backdrop-filter: blur(8px);
+
+  display: flex;
+  flex-direction: column;
+}
+
+.logo {
+  margin: 0 0 18px;
+  font-size: 18px;
+  letter-spacing: 0.4px;
+  font-weight: 800;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  text-decoration: none;
+  color: rgba(255, 255, 255, 0.86);
+  padding: 11px 12px;
+  border-radius: 14px;
+
+  transition: 140ms ease;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.navItem:hover {
+  background: rgba(255, 255, 255, 0.09);
+  transform: translateX(2px);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.25);
+}
+
+.navItem.active {
+  background: rgba(37, 99, 235, 0.22);
+  border: 1px solid rgba(37, 99, 235, 0.45);
+  color: #fff;
+}
+
+.navIcon {
+  opacity: 0.9;
+}
+
+.userInfo {
+  margin-top: auto;
+  margin-bottom: 16px;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.userLabel {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.userEmail {
+  margin: 6px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  word-break: break-word;
+}
+
+.logoutContainer {
+  padding-top: 0;
+}
+
+.logoutButton {
+  width: 100%;
+  background: rgba(255, 77, 79, 0.9);
+  border: 1px solid rgba(255, 77, 79, 0.9);
+  color: white;
+  padding: 11px 12px;
+  border-radius: 14px;
+  cursor: pointer;
+
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  transition: 140ms ease;
+}
+
+.logoutButton:hover {
+  background: rgba(224, 67, 68, 0.95);
+  transform: translateX(2px);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.25);
+}

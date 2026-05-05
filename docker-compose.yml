@@ -1,0 +1,165 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    environment:
+      POSTGRES_DB: aisecureorch
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1234
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d aisecureorch"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - mcp_network
+
+  ai_agent:
+    build: ./ai_agent
+    container_name: ai_agent
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: gpt-5.4-mini
+      MCP_HOST_URL: http://mcp_host:8000
+    ports:
+      - "8005:8005"
+    volumes:
+      - ./ai_agent/reports:/app/reports
+      - ./ai_agent:/app
+    depends_on:
+      - mcp_host
+    networks:
+      - mcp_network
+
+  mcp_host:
+    build: ./mcp_host
+    container_name: mcp_host
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./mcp_host:/app
+      - ./:/workspace
+    environment:
+      DATABASE_URL: postgresql://postgres:1234@postgres:5432/aisecureorch
+    depends_on:
+      postgres:
+        condition: service_healthy
+      bandit_mcp_server:
+        condition: service_started
+      sonar_mcp_server:
+        condition: service_started
+      zap_mcp_server:
+        condition: service_started
+      safety_mcp_server:
+        condition: service_started
+    networks:
+      - mcp_network
+
+  mcp_server:
+    build: ./mcp_server
+    image: aisecure/mcp-server
+    container_name: mcp_server
+    environment:
+      MCP_HOST_URL: http://mcp_host:8000
+    depends_on:
+      - mcp_host
+    networks:
+      - mcp_network
+
+  bandit_mcp_server:
+    build: ./bandit_mcp_server
+    container_name: bandit_mcp_server
+    networks:
+      - mcp_network
+    volumes:
+      - ./:/workspace
+      - ./uploads:/workspace/uploads
+
+  sonar_mcp_server:
+    build: ./sonar_mcp_server
+    container_name: sonar_mcp_server
+    depends_on:
+      - sonarqube
+    environment:
+      SONAR_HOST: http://sonarqube:9000
+      SONAR_TOKEN: ${SONAR_TOKEN}
+    networks:
+      - mcp_network
+    volumes:
+      - ./:/workspace
+      - ./uploads:/workspace/uploads
+
+  zap_mcp_server:
+    build: ./zap_mcp_server
+    container_name: zap_mcp_server
+    depends_on:
+      - zap
+    networks:
+      - mcp_network
+
+  safety_mcp_server:
+    build: ./safety_mcp_server
+    container_name: safety_mcp_server
+    networks:
+      - mcp_network
+    volumes:
+      - ./:/workspace
+
+  sonarqube:
+    image: sonarqube:lts-community
+    container_name: sonarqube
+    ports:
+      - "9000:9000"
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_logs:/opt/sonarqube/logs
+      - sonarqube_extensions:/opt/sonarqube/extensions
+    networks:
+      - mcp_network
+
+  zap:
+    image: zaproxy/zap-stable
+    container_name: zap
+    command: >
+      zap.sh -daemon
+      -host 0.0.0.0
+      -port 8080
+      -config api.disablekey=true
+      -config api.addrs.addr.name=.*
+      -config api.addrs.addr.regex=true
+    ports:
+      - "8080:8080"
+    networks:
+      - mcp_network
+
+  frontend:
+    build: ./frontend
+    container_name: frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - mcp_host
+    networks:
+      - mcp_network
+
+  juice-shop:
+    image: bkimminich/juice-shop
+    container_name: juice-shop
+    ports:
+      - "3001:3000"
+    networks:
+      - mcp_network
+
+networks:
+  mcp_network:
+    driver: bridge
+
+volumes:
+  sonarqube_data:
+  sonarqube_logs:
+  sonarqube_extensions:
+  postgres_data:
