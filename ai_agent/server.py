@@ -335,7 +335,7 @@ def run_iterative_mcp_loop(user_input: str, report_type: str = "Executive") -> D
     try:
         while iteration_count < MCP_LOOP_MAX_STEPS:
             iteration_count += 1
-            completion = call_openai_with_tools(
+            completion = call_openai_with_tools(    ##first call to model ai decisioon for tools
                 input_payload=next_input,
                 previous_response_id=previous_response_id,
             )

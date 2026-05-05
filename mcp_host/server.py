@@ -35,7 +35,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 SEED_USER_EMAIL = os.getenv("SEED_USER_EMAIL", "admin@example.com")
 SEED_USER_PASSWORD = os.getenv("SEED_USER_PASSWORD", "Admin@12345")
 AI_AGENT_REQUEST_TIMEOUT = int(os.getenv("AI_AGENT_REQUEST_TIMEOUT", "900"))
-TOOL_EXECUTE_HTTP_TIMEOUT = int(os.getenv("MCP_TOOL_EXECUTE_TIMEOUT", "120"))
+
 
 
 def seed_default_user():
@@ -105,21 +105,6 @@ class UserRequest(BaseModel):
     input: str
     report_type: str = "Executive"
 
-
-class ToolRequest(BaseModel):
-    tool_name: str
-    arguments: dict
-
-
-# =========================
-# TOOL REGISTRY
-# =========================
-TOOL_REGISTRY = {
-    "scan_with_bandit": "http://bandit_mcp_server:8001/execute",
-    "scan_with_sonar": "http://sonar_mcp_server:8002/execute",
-    "scan_with_zap": "http://zap_mcp_server:8003/execute",
-    "scan_with_safety": "http://safety_mcp_server:8004/execute",
-}
 
 
 def _call_ai_agent_iterative(scan_input: str, report_type: str = "Executive") -> dict:
@@ -203,70 +188,6 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
         "token_type": "bearer"
     }
 
-
-# =========================
-# ANALYZE
-# =========================
-@app.post("/execute_tools")
-def execute_tools(request: dict):
-    exec_id = uuid.uuid4().hex[:8]
-    print(f"========== [MCP_HOST] BEGIN EXECUTION id={exec_id} ==========")
-    tools = request.get("tools", [])
-    aggregated_results = {}
-    print(f"[MCP_HOST] Checkpoint: tool count={len(tools)}")
-
-    try:
-        for tool in tools:
-            tool_name = tool.get("name")
-            arguments = tool.get("arguments", {})
-            print(f"[MCP_HOST] Checkpoint: dispatch tool={tool_name} arguments={arguments}")
-
-            tool_url = TOOL_REGISTRY.get(tool_name)
-
-            if not tool_url:
-                print(f"[MCP_HOST] Checkpoint: unknown tool skipped tool={tool_name}")
-                aggregated_results[tool_name or "unknown_tool"] = {
-                    "error": "Unknown tool",
-                    "tool_name": tool_name,
-                }
-                continue
-
-            try:
-                tool_response = requests.post(
-                    tool_url, json=arguments, timeout=TOOL_EXECUTE_HTTP_TIMEOUT
-                )
-            except requests.RequestException as exc:
-                aggregated_results[tool_name] = {
-                    "error": "Tool service request failed",
-                    "details": str(exc),
-                    "tool_url": tool_url,
-                }
-                continue
-
-            print(
-                f"[MCP_HOST] Checkpoint: response tool={tool_name} status_code={tool_response.status_code}"
-            )
-
-            if tool_response.status_code != 200:
-                aggregated_results[tool_name] = {
-                    "error": "Tool service returned non-200 response",
-                    "status_code": tool_response.status_code,
-                    "body": tool_response.text,
-                }
-                continue
-
-            try:
-                aggregated_results[tool_name] = tool_response.json()
-            except Exception:
-                aggregated_results[tool_name] = {
-                    "error": "Invalid JSON",
-                    "raw": tool_response.text
-                }
-        return {
-            "results": aggregated_results
-        }
-    finally:
-        print(f"========== [MCP_HOST] END EXECUTION id={exec_id} ==========")
     
 @app.post("/analyze")
 def analyze(

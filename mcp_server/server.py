@@ -31,44 +31,6 @@ def execute_tool(request: dict):
         return {"error": "Unknown tool"}
 
 
-def _post_execute_tools(tools: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Call existing orchestrator endpoint and normalize errors."""
-    try:
-        response = requests.post(
-            f"{MCP_HOST_URL}/execute_tools",
-            json={"tools": tools},
-            timeout=REQUEST_TIMEOUT_SECONDS,
-        )
-    except requests.RequestException as exc:
-        return {
-            "status": "error",
-            "message": "Failed to reach mcp_host service",
-            "details": str(exc),
-        }
-
-    if response.status_code != 200:
-        return {
-            "status": "error",
-            "message": "mcp_host returned non-200 response",
-            "status_code": response.status_code,
-            "body": response.text,
-        }
-
-    try:
-        payload = response.json()
-    except ValueError:
-        return {
-            "status": "error",
-            "message": "mcp_host returned invalid JSON",
-            "body": response.text,
-        }
-
-    return {
-        "status": "success",
-        "results": payload.get("results", {}),
-    }
-
-
 @mcp.tool()
 def run_bandit(path: str) -> Dict[str, Any]:
     try:
@@ -132,16 +94,7 @@ def run_zap(target: str) -> Dict[str, Any]:
             "details": str(e)
         }
 
-@mcp.tool()
-def run_all_local(path: str) -> Dict[str, Any]:
-    """Run Bandit + Sonar + Safety for a local project path."""
-    return _post_execute_tools(
-        [
-            {"name": "scan_with_bandit", "arguments": {"path": path}},
-            {"name": "scan_with_sonar", "arguments": {"path": path}},
-            {"name": "scan_with_safety", "arguments": {"path": path}},
-        ]
-    )
+
 
 
 @app.get("/")
