@@ -10,6 +10,7 @@ from openai import OpenAI
 from pdf_generator import generate_pdf
 from datetime import datetime
 
+
 app = FastAPI()
 
 app.add_middleware(
@@ -28,11 +29,12 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 # OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
 
-MCP_HOST_URL = os.getenv("MCP_HOST_URL", "http://mcp_host:8000")
+
 MCP_LOOP_MAX_STEPS = int(os.getenv("MCP_LOOP_MAX_STEPS", "6"))
 TOOL_REQUEST_TIMEOUT_DEFAULT = int(os.getenv("MCP_TOOL_REQUEST_TIMEOUT", "1200"))
 # Sonar: scanner capped at 120s server-side + sleep + issues API — keep HTTP slack here.
 TOOL_REQUEST_TIMEOUT_SONAR = int(os.getenv("MCP_TOOL_REQUEST_TIMEOUT_SONAR", "120"))
+USE_MCP_DIRECT = os.getenv("USE_MCP_DIRECT", "false").lower() == "true"
 
 # ollama_client = OpenAI(
 #     base_url=OLLAMA_BASE_URL,
@@ -231,55 +233,37 @@ def call_openai_with_tools(
 
 
 def execute_mcp_tool(tool_name: str, tool_args: Dict[str, Any]) -> Dict[str, Any]:
-    host_tool_name = MCP_TO_HOST_TOOL_MAP.get(tool_name)
-    if not host_tool_name:
-        return {"error": f"Unsupported MCP tool: {tool_name}"}
-
-    if host_tool_name == "scan_with_zap":
-        payload_args = {"target": tool_args.get("target")}
-        _log(f"🧭 [ZAP_CHECKPOINT] mapped {tool_name} -> {host_tool_name} target={payload_args.get('target')}")
-    else:
-        payload_args = {"path": tool_args.get("path")}
-
     try:
-        if host_tool_name == "scan_with_zap":
-            _log("📤 [ZAP_CHECKPOINT] dispatching request to mcp_host /execute_tools")
-        timeout_sec = (
-            TOOL_REQUEST_TIMEOUT_SONAR
-            if host_tool_name == "scan_with_sonar"
-            else TOOL_REQUEST_TIMEOUT_DEFAULT
-        )
         response = requests.post(
-            f"{MCP_HOST_URL}/execute_tools",
-            json={"tools": [{"name": host_tool_name, "arguments": payload_args}]},
-            timeout=timeout_sec,
+            "http://mcp_server:8006/execute",   # ✅ NEW TARGET
+            json={
+                "tool": tool_name,
+                "arguments": tool_args
+            },
+            timeout=600
         )
-    except requests.RequestException as exc:
-        if host_tool_name == "scan_with_zap":
-            _log(f"❌ [ZAP_CHECKPOINT] request exception before execution: {str(exc)}")
-        return {"error": "Failed to call mcp_host", "details": str(exc)}
 
-    if response.status_code != 200:
-        if host_tool_name == "scan_with_zap":
-            _log(f"❌ [ZAP_CHECKPOINT] mcp_host returned status={response.status_code}")
+        return response.json()
+
+    except Exception as e:
         return {
-            "error": "mcp_host returned non-200",
-            "status_code": response.status_code,
-            "body": response.text,
+            "error": "MCP call failed",
+            "details": str(e)
         }
 
+def execute_mcp_tool_direct(tool_name: str, tool_args: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    NEW MCP execution (direct via MCP server)
+    SAFE: does not replace old logic
+    """
     try:
-        payload = response.json()
-    except ValueError:
-        if host_tool_name == "scan_with_zap":
-            _log("❌ [ZAP_CHECKPOINT] mcp_host response is not valid JSON")
-        return {"error": "mcp_host returned invalid JSON", "body": response.text}
-
-    result = payload.get("results", {}).get(host_tool_name, {})
-    if host_tool_name == "scan_with_zap":
-        has_error = isinstance(result, dict) and bool(result.get("error"))
-        _log(f"{'❌' if has_error else '✅'} [ZAP_CHECKPOINT] completed end-to-end")
-    return result
+        result = mcp_client.call_tool(tool_name, tool_args)
+        return result
+    except Exception as e:
+        return {
+            "error": "MCP direct execution failed",
+            "details": str(e)
+        }
 
 
 def run_iterative_mcp_loop(user_input: str, report_type: str = "Executive") -> Dict[str, Any]:
@@ -367,13 +351,12 @@ def run_iterative_mcp_loop(user_input: str, report_type: str = "Executive") -> D
                 else:
                     _log("⚠️ [AI_LOOP] iter=1 no tool calls; model returned direct answer")
 
-            if not tool_calls:
-               has_tool_results = bool(aggregated_results)
+            has_tool_results = bool(aggregated_results)
 
-            # 🔥 If no tools executed yet → force another iteration
-            if not has_tool_results:
-              _log("⚠️ [AI_LOOP] no tools executed yet, forcing another iteration")
-              continue
+            # If no tools selected AND no results yet → force loop
+            if not tool_calls and not has_tool_results:
+               _log("⚠️ [AI_LOOP] no tools executed yet, forcing another iteration")
+               continue
 
             # 🔥 If ZAP failed → DO NOT STOP (force retry)
             zap_failed = False
@@ -386,8 +369,13 @@ def run_iterative_mcp_loop(user_input: str, report_type: str = "Executive") -> D
               _log("⚠️ [AI_LOOP] ZAP failed → forcing retry instead of exiting")
               continue
 
-            final_report = _extract_final_text(completion)
-            break
+            if not tool_calls:
+              if has_tool_results:
+                final_report = _extract_final_text(completion)
+                break
+              else:
+                 _log("⚠️ AI returned no tools and no results → retry")
+                 continue
 
             selected_tools = [getattr(tool_call, "name", "") for tool_call in tool_calls]
             _log(f"🧠 [AI_LOOP] iter={iteration_count} LLM selected tools={selected_tools}")
@@ -404,7 +392,10 @@ def run_iterative_mcp_loop(user_input: str, report_type: str = "Executive") -> D
                     f"🧠 [AI_LOOP] tool={tool_name} args={json.dumps(tool_args, ensure_ascii=False)}"
                 )
 
-                tool_result = execute_mcp_tool(tool_name, tool_args)
+                if USE_MCP_DIRECT:
+                    tool_result = execute_mcp_tool_direct(tool_name, tool_args)
+                else:
+                    tool_result = execute_mcp_tool(tool_name, tool_args)
                 if isinstance(tool_result, dict) and tool_result.get("error"):
                     _log(f"❌ [AI_LOOP] {tool_name} failed: {tool_result.get('error')}")
                 else:

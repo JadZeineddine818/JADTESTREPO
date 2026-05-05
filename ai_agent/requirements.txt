@@ -1,4 +1,6 @@
-mcp
 fastapi
 uvicorn
 requests
+reportlab
+openai
+mcp

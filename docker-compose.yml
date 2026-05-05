@@ -24,7 +24,7 @@ services:
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_MODEL: gpt-5.4-mini
-      MCP_HOST_URL: http://mcp_host:8000
+      USE_MCP_DIRECT: "false"   # ✅ ADD THIS
     ports:
       - "8005:8005"
     volumes:
@@ -32,6 +32,7 @@ services:
       - ./ai_agent:/app
     depends_on:
       - mcp_host
+      - mcp_server
     networks:
       - mcp_network
 
@@ -63,10 +64,10 @@ services:
     build: ./mcp_server
     image: aisecure/mcp-server
     container_name: mcp_server
+    ports:
+     - "8006:8006"
     environment:
       MCP_HOST_URL: http://mcp_host:8000
-    depends_on:
-      - mcp_host
     networks:
       - mcp_network
 
